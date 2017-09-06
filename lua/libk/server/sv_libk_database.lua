@@ -24,7 +24,12 @@ function LibK.getDatabaseConnection( config, name )
 				hook.Call( "LibK_DatabaseConnectionFailed", nil, DB, name, "MySQLOO is not installed properly" )
 			end
 		else
-			KLog( 4, "[LibK] MysqlOO is correctly installed." )
+			if (mysqloo.VERSION != "9" || !mysqloo.MINOR_VERSION || tonumber(mysqloo.MINOR_VERSION) < 3) then
+				KLog( 1, "[LibK] FATAL: You are using an outdated mysqloo version\nDownload the latest mysqloo9 from here: bit.ly/mysqloo" )
+				hook.Call( "LibK_DatabaseConnectionFailed", nil, DB, name, "You are using an outdated mysqloo version\nDownload the latest mysqloo9 from here: bit.ly/mysqloo" )
+			else
+				KLog( 4, "[LibK] MysqlOO is correctly installed." )
+			end
 		end
 	end
 
@@ -164,8 +169,8 @@ function LibK.getDatabaseConnection( config, name )
 
 	function DB.DoQuery( sqlText, blocking )
 		local def = Deferred( )
-		DB.Query( sqlText, function( data )
-			def:Resolve( data )
+		DB.Query( sqlText, function( data, lastInsertId )
+			def:Resolve( data, lastInsertId )
 		end, function( err )
 			def:Reject( 0, err )
 		end, blocking )
@@ -220,13 +225,20 @@ function LibK.getDatabaseConnection( config, name )
 			return
 		end
 
+		if (mysqloo.VERSION != "9" || !mysqloo.MINOR_VERSION || tonumber(mysqloo.MINOR_VERSION) < 3) then
+			KLog( 1, "[LibK] FATAL: You are using an outdated mysqloo version\nDownload the latest mysqloo9 from here: bit.ly/mysqloo" )
+			return
+		end
+
 		local databaseObject = mysqloo.connect(host, username, password, database_name, database_port)
+		LibK.mysqloolib.ConvertDatabase(databaseObject) -- Sets metatable to include convenience methods
 
 		if timer.Exists("libk_check_mysql_status") then timer.Destroy("libk_check_mysql_status") end
 
 		databaseObject.onConnectionFailed = function(_, msg)
 			KLogf( 1, "[LibK] Connection failed to %s(%s@%s:%s): %s", name, username, host, database_port, msg )
 			hook.Call( "LibK_DatabaseConnectionFailed", nil, DB, name, tostring( msg ) )
+			DB.ConnectionPromise:Reject(tostring(msg))
 		end
 
 		databaseObject.onConnected = function()
@@ -253,8 +265,15 @@ function LibK.getDatabaseConnection( config, name )
 			end)
 			DB.IsConnected = true
 			hook.Call("LibK_DatabaseInitialized", nil, DB, name )
+
+			-- Don't resolve the initial connection promise
+			-- on reconnect.
+			if getPromiseState(DB.ConnectionPromise) == 'pending' then
+				DB.ConnectionPromise:Resolve()
+			end
 		end
 		databaseObject:connect()
+
 		DB.MySQLDB = databaseObject
 	end
 
@@ -312,7 +331,18 @@ function LibK.getDatabaseConnection( config, name )
 		end
 	end
 
+	function DB.Transaction()
+		if DB.CONNECTED_TO_MYSQL then
+			return LibK.TransactionMysql:new(DB)
+		else
+			return LibK.TransactionSqlite:new(DB)
+		end
+	end
+
 	DATABASES[name] = DB
+	
+	DB.ConnectionPromise = Deferred()
+	
 	if config.UseMysql then
 		KLogf( 4, "Connecting to %s@%s db: %s", config.User, config.Host, config.Database )
 		DB.ConnectToMySQL(config.Host, config.User, config.Password, config.Database, config.Port )
@@ -322,6 +352,8 @@ function LibK.getDatabaseConnection( config, name )
 		-- Enable FK
 		DB.Query( "PRAGMA foreign_keys = ON;" )
 		DB.DisableForeignKeyChecks( false )
+
+		DB.ConnectionPromise:Resolve()
 
 		-- Run hooks
 		hook.Call("LibK_DatabaseInitialized", nil, DB, name )

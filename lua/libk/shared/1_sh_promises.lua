@@ -233,12 +233,13 @@ function Deferred()
 end
 
 function getPromiseState( promise )
-	if promise._IsDeferred then
+	if promise and promise._IsDeferred then
 		return promise._promise._state
-	elseif promise._IsPromise then
-		return promise._promise
+	elseif promise and ( promise._IsPromise or promise._promise ) then
+		return promise._state
 	else
-		error( "Invalid object passed to getPromiseState(expected deferred/promise got " .. type( promise ) ..")",  2 )
+		debug.Trace( )
+		error( "Invalid object passed to getPromiseState(expected deferred/promise got " .. type( promise ) ..")" )
 	end
 end
 

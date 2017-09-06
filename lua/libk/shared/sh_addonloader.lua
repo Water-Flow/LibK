@@ -10,6 +10,7 @@ local function addCSLua( luaroot )
 		addCSLua( luaroot .. "/" .. folder )
 	end
 end
+LibK.AddCSLuaDir = addCSLua
 
 local function loadFolder( luaroot, spaces )
 	spaces = spaces or 4
@@ -143,6 +144,10 @@ function LibK.InitializeAddon( addonTable )
 	table.insert( LibK.addonsLoaded, addonTable )
 
 	if SERVER then
+		--AddCSLuaFile Stuff
+		addCSLua( luaroot .. "/client" )
+		addCSLua( luaroot .. "/shared" )
+
 		LibK.updateAddon( addonTable )
 		:Fail( function( err )
 			ErrorNoHalt( err )
@@ -152,9 +157,6 @@ function LibK.InitializeAddon( addonTable )
 			KLogf( 4, "[%s] Update finished", addonTable.addonName )
 			doLoadAddon( addonTable )
 		end )
-		--AddCSLuaFile Stuff
-		addCSLua( luaroot .. "/client" )
-		addCSLua( luaroot .. "/shared" )
 	else
 		doLoadAddon( addonTable )
 	end
