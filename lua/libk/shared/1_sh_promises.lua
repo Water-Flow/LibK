@@ -246,9 +246,10 @@ end
 --Kamshak
 
 -- Waits for all promises to be finished, when one errors it rejects, else it returns the results in order
-function WhenAllFinished( tblPromises )
+function WhenAllFinished( tblPromises, options )
 	local def = Deferred( )
 	local results = {}
+	local options = options or {}
 
 	if #tblPromises == 0 then
 		--No promises so we finished already?
@@ -283,7 +284,11 @@ function WhenAllFinished( tblPromises )
 				end
 			end
 			if allDone then
-				def:Resolve( unpack( results ) )
+				if options.noUnpack then
+					def:Resolve( results )
+				else
+					def:Resolve( unpack( results ) )
+				end
 			end
 		end )
 		v:Fail( function( ... )
@@ -308,22 +313,22 @@ function ispromise( val )
 end
 
 -- Maps promises to results and resolves to the map when finished
-function Promise.Map( tbl, iterator )
+function Promise.Map( tbl, mapFn )
+	local opts = opts or {}
     local promises = {}
     for k, v in pairs( tbl ) do
         local promise = Promise.Resolve()
         :Then( function( )
             if ispromise( v ) then
-                return v:Then( iterator )
+                return v:Then( mapFn )
             end
-            return iterator( v )
+            return mapFn( v )
         end )
 
         table.insert( promises, promise )
     end
-    return WhenAllFinished( promises ):Then( function( ... )
-        return {...}
-    end )
+
+    return WhenAllFinished( promises, { noUnpack = true } )
 end
 
 
